@@ -84,6 +84,10 @@
       }
 
       .drop-hint strong { color: var(--text); }
+      .has-video .drop-hint {
+        opacity: 0;
+      }
+
       .dragging .drop-hint {
         opacity: 1;
         transform: scale(1.01);
@@ -279,8 +283,10 @@
               <option value="1" selected>1x</option>
               <option value="1.25">1.25x</option>
               <option value="1.5">1.5x</option>
+              <option value="1.75">1.75x</option>
               <option value="2">2x</option>
             </select>
+            <button class="btn" id="playMode">連続再生</button>
             <input id="file" class="file" type="file" accept="video/*" multiple />
           </div>
           <div class="status" id="status" aria-live="polite"></div>
@@ -300,10 +306,11 @@
           <div class="help">
             <div>Space / K: 再生・一時停止</div>
             <div>J / L, ← / →: シーク</div>
+            <div>P / I: 1%シーク</div>
             <div>M: ミュート, F: 全画面</div>
-            <div>N / P: 次へ・前へ</div>
+            <div>Return / Backspace: 次へ・前へ</div>
             <div>[ / ]: 速度変更</div>
-            <div>0-9: 再生位置ジャンプ</div>
+            <div>0-9: 再生位置ジャンプ, U: 再生モード</div>
           </div>
         </div>
         <div class="panel">
@@ -319,7 +326,6 @@
       const app = document.getElementById("app");
       const video = document.getElementById("video");
       const dropZone = document.getElementById("dropZone");
-      const dropHint = document.getElementById("dropHint");
       const fileInput = document.getElementById("file");
       const playlistEl = document.getElementById("playlist");
       const currentTitle = document.getElementById("currentTitle");
@@ -332,6 +338,7 @@
       const volume = document.getElementById("volume");
       const rate = document.getElementById("rate");
       const playPauseBtn = document.getElementById("playPause");
+      const playModeBtn = document.getElementById("playMode");
       const prevBtn = document.getElementById("prev");
       const nextBtn = document.getElementById("next");
       const back10Btn = document.getElementById("back10");
@@ -344,7 +351,14 @@
       let currentIndex = -1;
       let objectUrl = null;
       let dragDepth = 0;
-      let frameTimer = null;
+      let playMode = "continuous";
+      let playlistSignature = "";
+
+      const playModeLabels = {
+        continuous: "連続再生",
+        repeatOne: "1件ループ",
+        stop: "終了で停止"
+      };
 
       const formatTime = (seconds) => {
         if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
@@ -361,11 +375,13 @@
 
       const updateControls = () => {
         const item = playlist[currentIndex];
+        app.classList.toggle("has-video", Boolean(item));
         currentTitle.textContent = item ? item.name : "ファイル未選択";
         stateText.textContent = item ? (video.paused ? "一時停止" : "再生中") : "未読込";
         countText.textContent = playlist.length.toString();
-        modeLabel.textContent = video.paused ? "停止中" : "再生中";
+        modeLabel.textContent = `${video.paused ? "停止中" : "再生中"} / ${playModeLabels[playMode]}`;
         playPauseBtn.textContent = video.paused ? "再生" : "一時停止";
+        playModeBtn.textContent = playModeLabels[playMode];
         muteBtn.textContent = video.muted || video.volume === 0 ? "ミュート解除" : "ミュート";
         fullscreenBtn.textContent = document.fullscreenElement ? "全画面解除" : "全画面";
         const duration = Number.isFinite(video.duration) ? video.duration : 0;
@@ -378,12 +394,19 @@
       };
 
       const renderPlaylist = () => {
+        const nextSignature = `${currentIndex}:${playlist.map((item) => item.name).join("|")}`;
+        if (nextSignature === playlistSignature) return;
+        playlistSignature = nextSignature;
         playlistEl.innerHTML = "";
         playlist.forEach((item, index) => {
           const li = document.createElement("li");
           const btn = document.createElement("button");
+          const name = document.createElement("strong");
+          const type = document.createElement("small");
           btn.className = `item${index === currentIndex ? " active" : ""}`;
-          btn.innerHTML = `<strong>${item.name}</strong><small>${item.type || "video"}</small>`;
+          name.textContent = item.name;
+          type.textContent = item.type || "video";
+          btn.append(name, type);
           btn.addEventListener("click", () => loadTrack(index, true));
           li.appendChild(btn);
           playlistEl.appendChild(li);
@@ -403,14 +426,23 @@
         currentIndex = index;
         revokeCurrentUrl();
         objectUrl = URL.createObjectURL(item.file);
+        const resumeTime = item.resumeTime || 0;
         video.src = objectUrl;
-        video.currentTime = item.resumeTime || 0;
-        try {
-          await video.play();
-          if (!autoplay) video.pause();
-          setStatus(`読み込み: ${item.name}`);
-        } catch {
-          setStatus(`読み込み: ${item.name}`, "error");
+        video.loop = playMode === "repeatOne";
+        video.addEventListener("loadedmetadata", () => {
+          const safeResumeTime = Math.min(resumeTime, Number.isFinite(video.duration) ? video.duration : 0);
+          if (safeResumeTime > 0) video.currentTime = safeResumeTime;
+        }, { once: true });
+        video.load();
+        setStatus(`読み込み: ${item.name}`);
+        if (autoplay) {
+          try {
+            await video.play();
+          } catch {
+            setStatus("再生を開始できませんでした。再生ボタンを押してください。", "error");
+          }
+        } else {
+          video.pause();
         }
         updateControls();
       };
@@ -423,6 +455,7 @@
         }
         playlist = list.map((file) => ({ file, name: file.name, type: file.type, resumeTime: 0 }));
         currentIndex = 0;
+        playlistSignature = "";
         loadTrack(0, false);
         setStatus(`${playlist.length}件の動画を読み込みました`);
         updateControls();
@@ -449,6 +482,15 @@
         updateControls();
       };
 
+      const cyclePlayMode = () => {
+        const order = ["continuous", "repeatOne", "stop"];
+        const next = order[(order.indexOf(playMode) + 1) % order.length];
+        playMode = next;
+        video.loop = playMode === "repeatOne";
+        setStatus(`再生モード: ${playModeLabels[playMode]}`);
+        updateControls();
+      };
+
       const togglePlay = async () => {
         if (!playlist.length) return;
         if (video.paused) {
@@ -469,10 +511,14 @@
       };
 
       const toggleFullscreen = async () => {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-        } else {
-          await document.documentElement.requestFullscreen();
+        try {
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+          } else {
+            await document.documentElement.requestFullscreen();
+          }
+        } catch {
+          setStatus("全画面表示に切り替えできませんでした", "error");
         }
         updateControls();
       };
@@ -481,13 +527,18 @@
         const item = playlist[currentIndex];
         if (!item) return;
         item.resumeTime = video.currentTime;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          playlist: playlist.map(({ name, type, resumeTime }) => ({ name, type, resumeTime })),
-          currentIndex,
-          volume: video.volume,
-          muted: video.muted,
-          rate: video.playbackRate
-        }));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            playlist: playlist.map(({ name, type, resumeTime }) => ({ name, type, resumeTime })),
+            currentIndex,
+            volume: video.volume,
+            muted: video.muted,
+            rate: video.playbackRate,
+            playMode
+          }));
+        } catch {
+          // 視聴操作を優先し、保存できない環境では状態保存だけ諦める。
+        }
       };
 
       const restoreState = () => {
@@ -498,6 +549,8 @@
           if (saved.volume != null) video.volume = saved.volume;
           if (saved.muted != null) video.muted = saved.muted;
           if (saved.rate != null) video.playbackRate = saved.rate;
+          if (saved.playMode && playModeLabels[saved.playMode]) playMode = saved.playMode;
+          video.loop = playMode === "repeatOne";
           updateControls();
         } catch {
           // 無視
@@ -536,6 +589,7 @@
       fwd10Btn.addEventListener("click", () => seekBy(10));
       muteBtn.addEventListener("click", toggleMute);
       fullscreenBtn.addEventListener("click", toggleFullscreen);
+      playModeBtn.addEventListener("click", cyclePlayMode);
 
       seek.addEventListener("input", () => {
         if (!Number.isFinite(video.duration)) return;
@@ -565,7 +619,9 @@
       video.addEventListener("ended", () => {
         const item = playlist[currentIndex];
         if (item) item.resumeTime = 0;
-        if (currentIndex < playlist.length - 1) {
+        if (playMode === "repeatOne") {
+          loadTrack(currentIndex, true);
+        } else if (playMode === "continuous" && currentIndex < playlist.length - 1) {
           loadTrack(currentIndex + 1, true);
         } else {
           setStatus("再生が終了しました");
@@ -594,6 +650,12 @@
         } else if (key.toLowerCase() === "l") {
           event.preventDefault();
           seekBy(10);
+        } else if (key.toLowerCase() === "p") {
+          event.preventDefault();
+          seekBy(Number.isFinite(video.duration) ? -video.duration * 0.01 : 0);
+        } else if (key.toLowerCase() === "i") {
+          event.preventDefault();
+          seekBy(Number.isFinite(video.duration) ? video.duration * 0.01 : 0);
         } else if (key === "ArrowUp") {
           event.preventDefault();
           video.volume = Math.min(1, video.volume + 0.05);
@@ -612,9 +674,6 @@
         } else if (key.toLowerCase() === "n" || key === "Enter") {
           event.preventDefault();
           changeTrack(1);
-        } else if (key.toLowerCase() === "p") {
-          event.preventDefault();
-          changeTrack(-1);
         } else if (key === "Backspace") {
           event.preventDefault();
           changeTrack(-1);
@@ -634,11 +693,14 @@
         } else if (key === "." && video.readyState >= 2) {
           event.preventDefault();
           video.pause();
-          seekBy(1 / Math.max(video.playbackRate, 1));
+          seekBy(1 / 30);
         } else if (key === "," && video.readyState >= 2) {
           event.preventDefault();
           video.pause();
-          seekBy(-1 / Math.max(video.playbackRate, 1));
+          seekBy(-1 / 30);
+        } else if (key.toLowerCase() === "u") {
+          event.preventDefault();
+          cyclePlayMode();
         }
       });
 
