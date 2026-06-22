@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>online_video_player</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111f;
+        --bg2: #0f1c31;
+        --panel: rgba(12, 19, 34, 0.9);
+        --panel-2: rgba(20, 30, 52, 0.95);
+        --text: #eaf0ff;
+        --muted: #9ab0d1;
+        --accent: #63b3ff;
+        --accent-2: #7cf7c1;
+        --danger: #ff7d7d;
+        --border: rgba(153, 184, 255, 0.18);
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        --radius: 20px;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(99, 179, 255, 0.24), transparent 30%),
+          radial-gradient(circle at top right, rgba(124, 247, 193, 0.18), transparent 24%),
+          linear-gradient(180deg, var(--bg), var(--bg2));
+        color: var(--text);
+      }
+
+      .app {
+        min-height: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
+        gap: 20px;
+        padding: 20px;
+      }
+
+      .stage, .sidebar {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(14px);
+      }
+
+      .stage {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .video-wrap {
+        position: relative;
+        aspect-ratio: 16 / 9;
+        background: #000;
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: #000;
+      }
+
+      .drop-hint {
+        position: absolute;
+        inset: 16px;
+        border: 1px dashed rgba(255,255,255,0.18);
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        text-align: center;
+        padding: 24px;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+
+      .drop-hint strong { color: var(--text); }
+      .dragging .drop-hint {
+        opacity: 1;
+        transform: scale(1.01);
+        border-color: rgba(99, 179, 255, 0.65);
+        background: rgba(8, 17, 31, 0.72);
+      }
+
+      .controls {
+        padding: 18px;
+        display: grid;
+        gap: 14px;
+        border-top: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .btn, .select, .file {
+        border: 1px solid rgba(153, 184, 255, 0.2);
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: 14px;
+        padding: 11px 14px;
+        font: inherit;
+      }
+
+      .btn {
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      }
+
+      .btn:hover, .btn:focus-visible {
+        transform: translateY(-1px);
+        border-color: rgba(99, 179, 255, 0.55);
+        outline: none;
+      }
+
+      .btn.primary {
+        background: linear-gradient(135deg, rgba(99, 179, 255, 0.95), rgba(124, 247, 193, 0.72));
+        color: #04111f;
+        font-weight: 700;
+      }
+
+      .btn.danger { border-color: rgba(255, 125, 125, 0.35); }
+      .btn.icon { min-width: 48px; padding-inline: 12px; }
+      .btn[aria-pressed="true"] { border-color: rgba(124, 247, 193, 0.7); }
+
+      .timeline {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .title {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .subtle { color: var(--muted); font-size: 14px; }
+
+      .sidebar {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-width: 0;
+      }
+
+      .panel {
+        padding: 18px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel:last-child { border-bottom: 0; }
+
+      .list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        max-height: 42vh;
+        overflow: auto;
+      }
+
+      .item {
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        background: rgba(255,255,255,0.03);
+        color: var(--text);
+      }
+
+      .item.active {
+        border-color: rgba(99, 179, 255, 0.6);
+        background: rgba(99, 179, 255, 0.12);
+      }
+
+      .item small { display: block; color: var(--muted); margin-top: 4px; }
+
+      .status {
+        font-size: 14px;
+        color: var(--muted);
+        min-height: 1.5em;
+      }
+
+      .status.error { color: var(--danger); }
+
+      .kv {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      .kv div {
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(153, 184, 255, 0.12);
+      }
+
+      .kv span {
+        display: block;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .help {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 1080px) {
+        .app { grid-template-columns: 1fr; }
+        .list { max-height: 28vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app" id="app">
+      <section class="stage">
+        <div class="video-wrap" id="dropZone">
+          <video id="video" playsinline preload="metadata"></video>
+          <div class="drop-hint" id="dropHint">
+            <div>
+              <strong>動画をドラッグ&ドロップ</strong>
+              <div>または右側からファイルを選択してください</div>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="title" id="currentTitle">ファイル未選択</div>
+          <div class="meta">
+            <div id="timeLabel">00:00 / 00:00</div>
+            <div id="modeLabel">停止中</div>
+          </div>
+          <input id="seek" class="timeline" type="range" min="0" max="1000" value="0" step="1" aria-label="再生位置" />
+          <div class="row">
+            <button class="btn primary" id="playPause">再生</button>
+            <button class="btn" id="prev">前へ</button>
+            <button class="btn" id="next">次へ</button>
+            <button class="btn" id="back10">-10秒</button>
+            <button class="btn" id="fwd10">+10秒</button>
+            <button class="btn" id="mute">ミュート</button>
+            <button class="btn" id="fullscreen">全画面</button>
+          </div>
+          <div class="row">
+            <label class="subtle">音量</label>
+            <input id="volume" class="timeline" type="range" min="0" max="100" value="80" />
+            <label class="subtle">速度</label>
+            <select id="rate" class="select" aria-label="再生速度">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+            <input id="file" class="file" type="file" accept="video/*" multiple />
+          </div>
+          <div class="status" id="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="panel">
+          <div class="title">読み込み済み</div>
+          <div class="subtle">クリックで再生対象を切り替え</div>
+        </div>
+        <div class="panel">
+          <ul class="list" id="playlist"></ul>
+        </div>
+        <div class="panel">
+          <div class="title">操作ヒント</div>
+          <div class="help">
+            <div>Space / K: 再生・一時停止</div>
+            <div>J / L, ← / →: シーク</div>
+            <div>M: ミュート, F: 全画面</div>
+            <div>N / P: 次へ・前へ</div>
+            <div>[ / ]: 速度変更</div>
+            <div>0-9: 再生位置ジャンプ</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="kv">
+            <div><span>状態</span><strong id="stateText">未読込</strong></div>
+            <div><span>ファイル数</span><strong id="countText">0</strong></div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      const app = document.getElementById("app");
+      const video = document.getElementById("video");
+      const dropZone = document.getElementById("dropZone");
+      const dropHint = document.getElementById("dropHint");
+      const fileInput = document.getElementById("file");
+      const playlistEl = document.getElementById("playlist");
+      const currentTitle = document.getElementById("currentTitle");
+      const timeLabel = document.getElementById("timeLabel");
+      const modeLabel = document.getElementById("modeLabel");
+      const statusEl = document.getElementById("status");
+      const stateText = document.getElementById("stateText");
+      const countText = document.getElementById("countText");
+      const seek = document.getElementById("seek");
+      const volume = document.getElementById("volume");
+      const rate = document.getElementById("rate");
+      const playPauseBtn = document.getElementById("playPause");
+      const prevBtn = document.getElementById("prev");
+      const nextBtn = document.getElementById("next");
+      const back10Btn = document.getElementById("back10");
+      const fwd10Btn = document.getElementById("fwd10");
+      const muteBtn = document.getElementById("mute");
+      const fullscreenBtn = document.getElementById("fullscreen");
+
+      const STORAGE_KEY = "online_video_player_state_v1";
+      let playlist = [];
+      let currentIndex = -1;
+      let objectUrl = null;
+      let dragDepth = 0;
+      let frameTimer = null;
+
+      const formatTime = (seconds) => {
+        if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+        const s = Math.floor(seconds % 60).toString().padStart(2, "0");
+        const m = Math.floor((seconds / 60) % 60).toString().padStart(2, "0");
+        const h = Math.floor(seconds / 3600);
+        return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+      };
+
+      const setStatus = (message, kind = "") => {
+        statusEl.textContent = message;
+        statusEl.className = `status ${kind}`.trim();
+      };
+
+      const updateControls = () => {
+        const item = playlist[currentIndex];
+        currentTitle.textContent = item ? item.name : "ファイル未選択";
+        stateText.textContent = item ? (video.paused ? "一時停止" : "再生中") : "未読込";
+        countText.textContent = playlist.length.toString();
+        modeLabel.textContent = video.paused ? "停止中" : "再生中";
+        playPauseBtn.textContent = video.paused ? "再生" : "一時停止";
+        muteBtn.textContent = video.muted || video.volume === 0 ? "ミュート解除" : "ミュート";
+        fullscreenBtn.textContent = document.fullscreenElement ? "全画面解除" : "全画面";
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        timeLabel.textContent = `${formatTime(video.currentTime)} / ${formatTime(duration)}`;
+        seek.value = duration > 0 ? Math.round((video.currentTime / duration) * 1000) : 0;
+        volume.value = Math.round(video.volume * 100);
+        rate.value = String(video.playbackRate);
+        renderPlaylist();
+        saveState();
+      };
+
+      const renderPlaylist = () => {
+        playlistEl.innerHTML = "";
+        playlist.forEach((item, index) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          btn.className = `item${index === currentIndex ? " active" : ""}`;
+          btn.innerHTML = `<strong>${item.name}</strong><small>${item.type || "video"}</small>`;
+          btn.addEventListener("click", () => loadTrack(index, true));
+          li.appendChild(btn);
+          playlistEl.appendChild(li);
+        });
+      };
+
+      const revokeCurrentUrl = () => {
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
+      };
+
+      const loadTrack = async (index, autoplay = false) => {
+        const item = playlist[index];
+        if (!item) return;
+        currentIndex = index;
+        revokeCurrentUrl();
+        objectUrl = URL.createObjectURL(item.file);
+        video.src = objectUrl;
+        video.currentTime = item.resumeTime || 0;
+        try {
+          await video.play();
+          if (!autoplay) video.pause();
+          setStatus(`読み込み: ${item.name}`);
+        } catch {
+          setStatus(`読み込み: ${item.name}`, "error");
+        }
+        updateControls();
+      };
+
+      const addFiles = (files) => {
+        const list = Array.from(files).filter((file) => file.type.startsWith("video/") || file.name.match(/\.(mp4|webm|ogg|mov|m4v)$/i));
+        if (list.length === 0) {
+          setStatus("動画ファイルを選択してください", "error");
+          return;
+        }
+        playlist = list.map((file) => ({ file, name: file.name, type: file.type, resumeTime: 0 }));
+        currentIndex = 0;
+        loadTrack(0, false);
+        setStatus(`${playlist.length}件の動画を読み込みました`);
+        updateControls();
+      };
+
+      const changeTrack = (delta) => {
+        if (!playlist.length) return;
+        const next = (currentIndex + delta + playlist.length) % playlist.length;
+        loadTrack(next, true);
+      };
+
+      const seekBy = (deltaSeconds) => {
+        if (!Number.isFinite(video.duration)) return;
+        video.currentTime = Math.min(Math.max(video.currentTime + deltaSeconds, 0), video.duration);
+      };
+
+      const setSeekPercent = (percent) => {
+        if (!Number.isFinite(video.duration)) return;
+        video.currentTime = Math.min(Math.max(video.duration * percent, 0), video.duration);
+      };
+
+      const setPlaybackRate = (nextRate) => {
+        video.playbackRate = Math.min(Math.max(nextRate, 0.25), 2);
+        updateControls();
+      };
+
+      const togglePlay = async () => {
+        if (!playlist.length) return;
+        if (video.paused) {
+          try {
+            await video.play();
+          } catch {
+            setStatus("再生を開始できませんでした", "error");
+          }
+        } else {
+          video.pause();
+        }
+        updateControls();
+      };
+
+      const toggleMute = () => {
+        video.muted = !video.muted;
+        updateControls();
+      };
+
+      const toggleFullscreen = async () => {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else {
+          await document.documentElement.requestFullscreen();
+        }
+        updateControls();
+      };
+
+      const saveState = () => {
+        const item = playlist[currentIndex];
+        if (!item) return;
+        item.resumeTime = video.currentTime;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          playlist: playlist.map(({ name, type, resumeTime }) => ({ name, type, resumeTime })),
+          currentIndex,
+          volume: video.volume,
+          muted: video.muted,
+          rate: video.playbackRate
+        }));
+      };
+
+      const restoreState = () => {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const saved = JSON.parse(raw);
+          if (saved.volume != null) video.volume = saved.volume;
+          if (saved.muted != null) video.muted = saved.muted;
+          if (saved.rate != null) video.playbackRate = saved.rate;
+          updateControls();
+        } catch {
+          // 無視
+        }
+      };
+
+      fileInput.addEventListener("change", (event) => {
+        addFiles(event.target.files);
+        fileInput.value = "";
+      });
+
+      dropZone.addEventListener("dragenter", (event) => {
+        event.preventDefault();
+        dragDepth += 1;
+        app.classList.add("dragging");
+      });
+      dropZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+      });
+      dropZone.addEventListener("dragleave", (event) => {
+        event.preventDefault();
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) app.classList.remove("dragging");
+      });
+      dropZone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dragDepth = 0;
+        app.classList.remove("dragging");
+        addFiles(event.dataTransfer.files);
+      });
+
+      playPauseBtn.addEventListener("click", togglePlay);
+      prevBtn.addEventListener("click", () => changeTrack(-1));
+      nextBtn.addEventListener("click", () => changeTrack(1));
+      back10Btn.addEventListener("click", () => seekBy(-10));
+      fwd10Btn.addEventListener("click", () => seekBy(10));
+      muteBtn.addEventListener("click", toggleMute);
+      fullscreenBtn.addEventListener("click", toggleFullscreen);
+
+      seek.addEventListener("input", () => {
+        if (!Number.isFinite(video.duration)) return;
+        video.currentTime = video.duration * (Number(seek.value) / 1000);
+      });
+      volume.addEventListener("input", () => {
+        video.volume = Number(volume.value) / 100;
+        if (video.volume > 0) video.muted = false;
+        updateControls();
+      });
+      rate.addEventListener("change", () => setPlaybackRate(Number(rate.value)));
+
+      video.addEventListener("loadedmetadata", () => {
+        if (!Number.isFinite(video.currentTime)) video.currentTime = 0;
+        updateControls();
+      });
+      video.addEventListener("timeupdate", () => {
+        updateControls();
+      });
+      video.addEventListener("play", () => {
+        setStatus(`再生中: ${playlist[currentIndex]?.name || ""}`);
+        updateControls();
+      });
+      video.addEventListener("pause", () => {
+        updateControls();
+      });
+      video.addEventListener("ended", () => {
+        const item = playlist[currentIndex];
+        if (item) item.resumeTime = 0;
+        if (currentIndex < playlist.length - 1) {
+          loadTrack(currentIndex + 1, true);
+        } else {
+          setStatus("再生が終了しました");
+          updateControls();
+        }
+      });
+      video.addEventListener("error", () => {
+        setStatus("動画の読み込みに失敗しました", "error");
+      });
+
+      document.addEventListener("keydown", async (event) => {
+        if (event.target && ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName) && event.key !== "Escape") return;
+        const key = event.key;
+        if (key === " " || key.toLowerCase() === "k" || key.toLowerCase() === "o") {
+          event.preventDefault();
+          await togglePlay();
+        } else if (key === "ArrowLeft") {
+          event.preventDefault();
+          seekBy(event.shiftKey ? -30 : -5);
+        } else if (key === "ArrowRight") {
+          event.preventDefault();
+          seekBy(event.shiftKey ? 30 : 5);
+        } else if (key.toLowerCase() === "j") {
+          event.preventDefault();
+          seekBy(-10);
+        } else if (key.toLowerCase() === "l") {
+          event.preventDefault();
+          seekBy(10);
+        } else if (key === "ArrowUp") {
+          event.preventDefault();
+          video.volume = Math.min(1, video.volume + 0.05);
+          video.muted = false;
+          updateControls();
+        } else if (key === "ArrowDown") {
+          event.preventDefault();
+          video.volume = Math.max(0, video.volume - 0.05);
+          updateControls();
+        } else if (key.toLowerCase() === "m") {
+          event.preventDefault();
+          toggleMute();
+        } else if (key.toLowerCase() === "f") {
+          event.preventDefault();
+          toggleFullscreen();
+        } else if (key.toLowerCase() === "n" || key === "Enter") {
+          event.preventDefault();
+          changeTrack(1);
+        } else if (key.toLowerCase() === "p") {
+          event.preventDefault();
+          changeTrack(-1);
+        } else if (key === "Backspace") {
+          event.preventDefault();
+          changeTrack(-1);
+        } else if (key === "[") {
+          event.preventDefault();
+          setPlaybackRate(video.playbackRate - 0.25);
+        } else if (key === "]") {
+          event.preventDefault();
+          setPlaybackRate(video.playbackRate + 0.25);
+        } else if (/^[0-9]$/.test(key)) {
+          event.preventDefault();
+          setSeekPercent(Number(key) / 10);
+        } else if (key === "Escape" && document.fullscreenElement) {
+          event.preventDefault();
+          await document.exitFullscreen();
+          updateControls();
+        } else if (key === "." && video.readyState >= 2) {
+          event.preventDefault();
+          video.pause();
+          seekBy(1 / Math.max(video.playbackRate, 1));
+        } else if (key === "," && video.readyState >= 2) {
+          event.preventDefault();
+          video.pause();
+          seekBy(-1 / Math.max(video.playbackRate, 1));
+        }
+      });
+
+      window.addEventListener("beforeunload", saveState);
+      window.addEventListener("load", () => {
+        restoreState();
+        setStatus("動画ファイルを読み込んでください");
+        updateControls();
+      });
+
+      document.addEventListener("fullscreenchange", updateControls);
+    </script>
+  </body>
+</html>
