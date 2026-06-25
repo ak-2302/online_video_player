@@ -268,6 +268,7 @@
         const nextFiles = Array.from(fileList).filter(isVideoFile);
 
         if (nextFiles.length === 0) {
+          clearSelection();
           setStatus("未対応形式です。動画ファイルを選択してください。", true);
           return;
         }
@@ -277,6 +278,16 @@
         currentIndex = -1;
         loadVideo(0, false);
         setStatus(`${files.length}件の動画を読み込みました。`);
+      };
+
+      const clearSelection = () => {
+        releaseCurrentUrl();
+        files = [];
+        currentIndex = -1;
+        video.removeAttribute("src");
+        video.load();
+        renderPlaylist();
+        setStatus("動画ファイルを選択してください。");
       };
 
       const togglePlay = async () => {
@@ -290,7 +301,7 @@
         try {
           await video.play();
         } catch {
-          setStatus("再生を開始できませんでした。再生不能な形式の可能性があります。", true);
+          setStatus("再生を開始できませんでした。再生ボタンを押してください。", true);
         }
       };
 
@@ -367,6 +378,14 @@
         setFiles(event.dataTransfer.files);
       });
 
+      document.addEventListener("dragover", (event) => {
+        event.preventDefault();
+      });
+
+      document.addEventListener("drop", (event) => {
+        event.preventDefault();
+      });
+
       video.addEventListener("loadedmetadata", () => {
         setStatus(`再生準備完了: ${files[currentIndex]?.name || ""}`);
       });
@@ -382,6 +401,10 @@
 
       video.addEventListener("error", () => {
         setStatus("動画を再生できません。未対応形式または読み込み失敗の可能性があります。", true);
+      });
+
+      fileInput.addEventListener("click", () => {
+        fileInput.value = "";
       });
 
       document.addEventListener("keydown", async (event) => {
