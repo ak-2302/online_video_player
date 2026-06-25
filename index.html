@@ -194,12 +194,13 @@
       let currentIndex = -1;
       let currentUrl = "";
       let modeIndex = 0;
+      const dragEvents = ["dragover", "drop"];
 
       const isVideoFile = (file) => {
         return file.type.startsWith("video/") || /\.(mp4|webm|ogg|ogv|mov|m4v)$/i.test(file.name);
       };
 
-      const setStatus = (message, isError = false) => {
+      const updateStatus = (message, isError = false) => {
         statusEl.textContent = message;
         statusEl.classList.toggle("error", isError);
       };
@@ -222,6 +223,16 @@
 
       const updateRate = () => {
         rateSelect.value = String(video.playbackRate);
+      };
+
+      const resetLibraryState = (message = "動画ファイルを選択してください。", isError = false) => {
+        releaseCurrentUrl();
+        files = [];
+        currentIndex = -1;
+        video.removeAttribute("src");
+        video.load();
+        renderPlaylist();
+        updateStatus(message, isError);
       };
 
       const renderPlaylist = () => {
@@ -253,14 +264,14 @@
         video.load();
         updateMode();
         renderPlaylist();
-        setStatus(`読み込み: ${file.name}`);
+        updateStatus(`読み込み: ${file.name}`);
 
         if (!shouldPlay) return;
 
         try {
           await video.play();
         } catch {
-          setStatus("再生を開始できませんでした。再生ボタンを押してください。", true);
+          updateStatus("再生を開始できませんでした。再生ボタンを押してください。", true);
         }
       };
 
@@ -268,26 +279,14 @@
         const nextFiles = Array.from(fileList).filter(isVideoFile);
 
         if (nextFiles.length === 0) {
-          clearSelection();
-          setStatus("未対応形式です。動画ファイルを選択してください。", true);
+          resetLibraryState("未対応形式です。動画ファイルを選択してください。", true);
           return;
         }
 
-        releaseCurrentUrl();
         files = nextFiles;
         currentIndex = -1;
         loadVideo(0, false);
-        setStatus(`${files.length}件の動画を読み込みました。`);
-      };
-
-      const clearSelection = () => {
-        releaseCurrentUrl();
-        files = [];
-        currentIndex = -1;
-        video.removeAttribute("src");
-        video.load();
-        renderPlaylist();
-        setStatus("動画ファイルを選択してください。");
+        updateStatus(`${files.length}件の動画を読み込みました。`);
       };
 
       const togglePlay = async () => {
@@ -301,7 +300,7 @@
         try {
           await video.play();
         } catch {
-          setStatus("再生を開始できませんでした。再生ボタンを押してください。", true);
+          updateStatus("再生を開始できませんでした。再生ボタンを押してください。", true);
         }
       };
 
@@ -341,14 +340,14 @@
             await target.requestFullscreen();
           }
         } catch {
-          setStatus("全画面表示に切り替えできませんでした。", true);
+          updateStatus("全画面表示に切り替えできませんでした。", true);
         }
       };
 
       const cycleMode = () => {
         modeIndex = (modeIndex + 1) % modes.length;
         updateMode();
-        setStatus(`再生モード: ${modes[modeIndex].label}`);
+        updateStatus(`再生モード: ${modes[modeIndex].label}`);
       };
 
       fileInput.addEventListener("change", () => {
@@ -378,16 +377,14 @@
         setFiles(event.dataTransfer.files);
       });
 
-      document.addEventListener("dragover", (event) => {
-        event.preventDefault();
-      });
-
-      document.addEventListener("drop", (event) => {
-        event.preventDefault();
+      dragEvents.forEach((type) => {
+        document.addEventListener(type, (event) => {
+          event.preventDefault();
+        });
       });
 
       video.addEventListener("loadedmetadata", () => {
-        setStatus(`再生準備完了: ${files[currentIndex]?.name || ""}`);
+        updateStatus(`再生準備完了: ${files[currentIndex]?.name || ""}`);
       });
 
       video.addEventListener("ended", () => {
@@ -396,11 +393,11 @@
           loadVideo(currentIndex + 1, true);
           return;
         }
-        setStatus("再生が終了しました。");
+        updateStatus("再生が終了しました。");
       });
 
       video.addEventListener("error", () => {
-        setStatus("動画を再生できません。未対応形式または読み込み失敗の可能性があります。", true);
+        updateStatus("動画を再生できません。未対応形式または読み込み失敗の可能性があります。", true);
       });
 
       fileInput.addEventListener("click", () => {
